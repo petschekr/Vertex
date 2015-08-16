@@ -37,6 +37,14 @@ struct SensorError {
 SensorError sensorError = {0, 0, 0};
 boolean calibrating = true;
 
+struct Attitude {
+  float pitch;
+  float roll;
+  float yaw;
+};
+Attitude attitude;
+unsigned long lastAttitudeUpdate = 0;
+
 Adafruit_10DOF                dof   = Adafruit_10DOF();
 Adafruit_LSM303_Accel_Unified accel = Adafruit_LSM303_Accel_Unified(30301);
 Adafruit_LSM303_Mag_Unified   mag   = Adafruit_LSM303_Mag_Unified(30302);
@@ -47,10 +55,12 @@ void setup () {
   Serial.begin(115200);
 
   // Initialize sensors
-  if (!accel.begin() || !mag.begin() || !bmp.begin()) {
+  if (!accel.begin() || !mag.begin() || !bmp.begin() || !gyro.begin()) {
     fatalError();
     while(true);
   }
+  // Enable auto-ranging
+  gyro.enableAutoRange(true);
   
   ESC1.attach(5);
   ESC2.attach(6);
@@ -93,8 +103,9 @@ void setup () {
   }
   // Calibrate accelerometer
   const unsigned short trials = 20;
+  sensors_vec_t sensorData;
   for (int trial = 0; trial < trials; trial++) {
-    sensors_vec_t sensorData = getOrientation();
+    sensorData = getOrientation();
     sensorError.pitch += (float)sensorData.pitch;
     sensorError.roll += (float)sensorData.roll;
     sensorError.elevation += getAltitude();
@@ -104,6 +115,12 @@ void setup () {
   sensorError.roll /= trials;
   sensorError.elevation /= trials;
   calibrating = false;
+
+  sensorData = getOrientation();
+  attitude.pitch = sensorData.pitch;
+  attitude.roll = sensorData.roll;
+  attitude.yaw = sensorData.heading;
+  lastAttitudeUpdate = millis();
   
   digitalWrite(armLED, HIGH);
 }
@@ -112,17 +129,42 @@ void loop () {
   setThrottleAll(minThrottle);
   
   sensors_vec_t orientation = getOrientation();
-  float altitude = getAltitude();
-  Serial.print(F("Roll: "));
-  Serial.print(orientation.roll);
-  Serial.print(F(";\tPitch: "));
-  Serial.print(orientation.pitch);
-  Serial.print(F(";\tHeading: "));
-  Serial.print(orientation.heading);
-  Serial.print(F(";\tAltitude: "));
-  Serial.println(altitude);
+  updateAttitude();
+  //float altitude = getAltitude();
+  Serial.print(F("Yaw: "));
+  Serial.print(attitude.yaw);
+  Serial.print(F(";\tRaw heading: "));
+  Serial.println(orientation.heading);
+  
+  // When pitch is positive, decrease motors 1 and 4; increase 2 and 3
+  
+  // When roll is positive, decrease motors 3 and 4; increase 1 and 2
 }
 
+void updateAttitude() {
+  unsigned int elapsedTime = millis() - lastAttitudeUpdate;
+  float elapsedSeconds = elapsedTime * 0.001;
+  sensors_vec_t orientation = getOrientation();
+  // X corresponds to pitch, Y corresponds to roll, Z corresponds to yaw
+  sensors_vec_t gyroData = getGyro();
+  // Convert rad/s to degrees/s to match accelerometer's units
+  gyroData.x *= (180 / PI);
+  gyroData.y *= (180 / PI);
+  gyroData.z *= (180 / PI);
+
+  // angle = 0.98 * (angle + gyroData * dt) + 0.02 * (accData)
+  attitude.pitch = 0.98 * (attitude.pitch + gyroData.x * elapsedSeconds) + 0.02 * orientation.pitch;
+  attitude.roll = 0.98 * (attitude.roll + gyroData.y * elapsedSeconds) + 0.02 * orientation.roll;
+  // Immediately correct when compass switches between -180 and 180 degrees
+  if (abs(orientation.heading - attitude.yaw) > 100) {
+    attitude.yaw = orientation.heading;
+  }
+  else {
+    attitude.yaw = 0.98 * (attitude.yaw + gyroData.z * elapsedSeconds) + 0.02 * orientation.heading;
+  }
+  lastAttitudeUpdate = millis();
+  delay(5);
+}
 sensors_vec_t getOrientation() {
   sensors_event_t accelEvent;
   sensors_event_t magEvent;
@@ -140,6 +182,14 @@ sensors_vec_t getOrientation() {
   }
   orientation.heading = -orientation.heading;
   return orientation;
+}
+sensors_vec_t getGyro() {
+  sensors_event_t gyroEvent;
+  gyro.getEvent(&gyroEvent);
+  gyroEvent.gyro.x = -gyroEvent.gyro.x;
+  gyroEvent.gyro.y = -gyroEvent.gyro.y;
+  gyroEvent.gyro.z = -gyroEvent.gyro.z;
+  return gyroEvent.gyro;
 }
 float getAltitude() {
   sensors_event_t baroEvent;
