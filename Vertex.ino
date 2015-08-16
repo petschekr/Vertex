@@ -28,7 +28,12 @@ const int armLED = A1;
 const int readyLED = A0;
 const int armButton = 2;
 boolean armed = false;
-float sensorError[2] = {0, 0};
+
+struct SensorError {
+  float pitch;
+  float roll;
+};
+SensorError sensorError = {0, 0};
 boolean calibrating = true;
 
 Adafruit_10DOF                dof   = Adafruit_10DOF();
@@ -97,12 +102,12 @@ void setup () {
   const unsigned short trials = 20;
   for (int trial = 0; trial < trials; trial++) {
     sensors_vec_t sensorData = getOrientation();
-    sensorError[0] += (float)sensorData.pitch;
-    sensorError[1] += (float)sensorData.roll;
+    sensorError.pitch += (float)sensorData.pitch;
+    sensorError.roll += (float)sensorData.roll;
     delay(20);
   }
-  sensorError[0] /= trials;
-  sensorError[1] /= trials;
+  sensorError.pitch /= trials;
+  sensorError.roll /= trials;
   calibrating = false;
   
   digitalWrite(armLED, HIGH);
@@ -132,8 +137,8 @@ sensors_vec_t getOrientation() {
   orientation.roll = -orientation.pitch;
   orientation.pitch = roll;
   if (!calibrating) {
-    orientation.pitch -= sensorError[0];
-    orientation.roll -= sensorError[1];
+    orientation.pitch -= sensorError.pitch;
+    orientation.roll -= sensorError.roll;
   }
   orientation.heading = -orientation.heading;
   return orientation;
