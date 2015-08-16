@@ -23,21 +23,37 @@ Servo ESC4;
 
 const int maxThrottle = 2000;
 const int minThrottle = 1000;
+const int effectiveMaxThrottle = maxThrottle - 200;
 const int armLED = A1;
 const int readyLED = A0;
 const int armButton = 2;
 boolean armed = false;
+float sensorError[2] = {0, 0};
+boolean calibrating = true;
 
+Adafruit_10DOF                dof   = Adafruit_10DOF();
 Adafruit_LSM303_Accel_Unified accel = Adafruit_LSM303_Accel_Unified(30301);
 Adafruit_LSM303_Mag_Unified   mag   = Adafruit_LSM303_Mag_Unified(30302);
 Adafruit_BMP085_Unified       bmp   = Adafruit_BMP085_Unified(18001);
 Adafruit_L3GD20_Unified       gyro  = Adafruit_L3GD20_Unified(20);
 
 void setup () {
-#ifdef DEBUG
   Serial.begin(115200);
-  while (!Serial) {};
-#endif
+
+  // Initialize sensors
+  if (!accel.begin()) {
+    Serial.println(F("No LSM303"));
+    while(true);
+  }
+  if (!mag.begin()) {
+    Serial.println(F("No LSM303"));
+    while(true);
+  }
+  if (!bmp.begin()) {
+    Serial.println(F("No BMP180"));
+    while(true);
+  }
+  
   ESC1.attach(5);
   ESC2.attach(6);
   ESC3.attach(7);
@@ -77,11 +93,50 @@ void setup () {
       armLEDOn = !armLEDOn;
     }
   }
+  // Calibrate accelerometer
+  const unsigned short trials = 20;
+  for (int trial = 0; trial < trials; trial++) {
+    sensors_vec_t sensorData = getOrientation();
+    sensorError[0] += (float)sensorData.pitch;
+    sensorError[1] += (float)sensorData.roll;
+    delay(20);
+  }
+  sensorError[0] /= trials;
+  sensorError[1] /= trials;
+  calibrating = false;
+  
   digitalWrite(armLED, HIGH);
 }
 
 void loop () {
+  setThrottleAll(minThrottle);
   
+  sensors_vec_t orientation = getOrientation();
+  Serial.print(F("Roll: "));
+  Serial.print(orientation.roll);
+  Serial.print(F("; Pitch: "));
+  Serial.print(orientation.pitch);
+  Serial.print(F("; Heading: "));
+  Serial.println(orientation.heading);
+}
+
+sensors_vec_t getOrientation() {
+  sensors_event_t accelEvent;
+  sensors_event_t magEvent;
+  sensors_vec_t   orientation;
+  /* Calculate pitch and roll from the raw accelerometer data */
+  accel.getEvent(&accelEvent);
+  mag.getEvent(&magEvent);
+  dof.fusionGetOrientation(&accelEvent, &magEvent, &orientation);
+  float roll = -orientation.roll;
+  orientation.roll = -orientation.pitch;
+  orientation.pitch = roll;
+  if (!calibrating) {
+    orientation.pitch -= sensorError[0];
+    orientation.roll -= sensorError[1];
+  }
+  orientation.heading = -orientation.heading;
+  return orientation;
 }
 
 void setThrottleAll (int throttle) {
