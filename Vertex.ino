@@ -32,8 +32,9 @@ boolean armed = false;
 struct SensorError {
   float pitch;
   float roll;
+  float elevation;
 };
-SensorError sensorError = {0, 0};
+SensorError sensorError = {0, 0, 0};
 boolean calibrating = true;
 
 Adafruit_10DOF                dof   = Adafruit_10DOF();
@@ -104,10 +105,12 @@ void setup () {
     sensors_vec_t sensorData = getOrientation();
     sensorError.pitch += (float)sensorData.pitch;
     sensorError.roll += (float)sensorData.roll;
+    sensorError.elevation += getAltitude();
     delay(20);
   }
   sensorError.pitch /= trials;
   sensorError.roll /= trials;
+  sensorError.elevation /= trials;
   calibrating = false;
   
   digitalWrite(armLED, HIGH);
@@ -117,12 +120,15 @@ void loop () {
   setThrottleAll(minThrottle);
   
   sensors_vec_t orientation = getOrientation();
+  float altitude = getAltitude();
   Serial.print(F("Roll: "));
   Serial.print(orientation.roll);
-  Serial.print(F("; Pitch: "));
+  Serial.print(F(";\tPitch: "));
   Serial.print(orientation.pitch);
-  Serial.print(F("; Heading: "));
-  Serial.println(orientation.heading);
+  Serial.print(F(";\tHeading: "));
+  Serial.print(orientation.heading);
+  Serial.print(F(";\tAltitude: "));
+  Serial.println(altitude);
 }
 
 sensors_vec_t getOrientation() {
@@ -142,6 +148,16 @@ sensors_vec_t getOrientation() {
   }
   orientation.heading = -orientation.heading;
   return orientation;
+}
+float getAltitude() {
+  sensors_event_t baroEvent;
+  bmp.getEvent(&baroEvent);
+  if (calibrating) {
+    return bmp.pressureToAltitude(SENSORS_PRESSURE_SEALEVELHPA, baroEvent.pressure);
+  }
+  else {
+    return bmp.pressureToAltitude(SENSORS_PRESSURE_SEALEVELHPA, baroEvent.pressure) - sensorError.elevation;
+  }
 }
 
 void setThrottleAll (int throttle) {
