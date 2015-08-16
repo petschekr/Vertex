@@ -47,16 +47,8 @@ void setup () {
   Serial.begin(115200);
 
   // Initialize sensors
-  if (!accel.begin()) {
-    Serial.println(F("No LSM303"));
-    while(true);
-  }
-  if (!mag.begin()) {
-    Serial.println(F("No LSM303"));
-    while(true);
-  }
-  if (!bmp.begin()) {
-    Serial.println(F("No BMP180"));
+  if (!accel.begin() || !mag.begin() || !bmp.begin()) {
+    fatalError();
     while(true);
   }
   
