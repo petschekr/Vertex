@@ -259,12 +259,7 @@ void setThrottle (int index, int throttle) {
 }
 void fatalError () {
   setThrottleAll(0);
-  while (true) {
-    digitalWrite(armLED, LOW);
-    digitalWrite(readyLED, LOW);
-    delay(250);
-    digitalWrite(armLED, HIGH);
-    digitalWrite(readyLED, HIGH);
-    delay(250);
-  }
+  digitalWrite(armLED, HIGH);
+  digitalWrite(readyLED, HIGH);
+  while (true) {}
 }
