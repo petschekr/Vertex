@@ -123,7 +123,7 @@ bool Adafruit_10DOF::accelGetOrientation(sensors_event_t *event, sensors_vec_t *
 /*!
     @brief  Utilize the sensor data from an accelerometer to compensate
             the magnetic sensor measurements when the sensor is tilted
-            (the pitch and roll angles are not equal 0°)
+            (the pitch and roll angles are not equal 0ï¿½)
 
     @param  axis          The given axis (SENSOR_AXIS_X/Y/Z) that is
                           parallel to the gravity of the Earth
@@ -214,7 +214,7 @@ bool Adafruit_10DOF::magTiltCompensation(sensors_axis_t axis, sensors_event_t *m
 /**************************************************************************/
 /*!
     @brief  Populates the .heading fields in the sensors_vec_t
-            struct with the right angular data (0-359°)
+            struct with the right angular data (0-359ï¿½)
 
             Heading increases when measuring clockwise
 
@@ -266,7 +266,7 @@ bool Adafruit_10DOF::magGetOrientation(sensors_axis_t axis, sensors_event_t *eve
       return false;
   }
 
-  /* Normalize to 0-359° */
+  /* Normalize to 0-359ï¿½ */
   if (orientation->heading < 0)
   {
     orientation->heading = 360 + orientation->heading;
@@ -299,14 +299,8 @@ bool Adafruit_10DOF::magGetOrientation(sensors_axis_t axis, sensors_event_t *eve
                           .roll, .pitch and .heading fields populated
 */
 /**************************************************************************/
-bool Adafruit_10DOF::fusionGetOrientation(sensors_event_t *accel_event, sensors_event_t *mag_event, sensors_vec_t *orientation)
+void Adafruit_10DOF::fusionGetOrientation(sensors_event_t *accel_event, sensors_event_t *mag_event, sensors_vec_t *orientation)
 {
-  /* Make sure the input is valid, not null, etc. */
-  if ( accel_event  == NULL) return false;
-  if ( mag_event    == NULL) return false;
-  if ( orientation  == NULL) return false;
-
-  float const PI_F = 3.14159265F;
 
   /* roll: Rotation around the X-axis. -180 <= roll <= 180                                          */
   /* a positive roll angle is defined to be a clockwise rotation about the positive X-axis          */
@@ -327,7 +321,7 @@ bool Adafruit_10DOF::fusionGetOrientation(sensors_event_t *accel_event, sensors_
   /*                                                                                                */
   /* where:  x, y, z are returned value from accelerometer sensor                                   */
   if (accel_event->acceleration.y * sin(orientation->roll) + accel_event->acceleration.z * cos(orientation->roll) == 0)
-    orientation->pitch = accel_event->acceleration.x > 0 ? (PI_F / 2) : (-PI_F / 2);
+    orientation->pitch = accel_event->acceleration.x > 0 ? (PI / 2) : (-PI / 2);
   else
     orientation->pitch = (float)atan(-accel_event->acceleration.x / (accel_event->acceleration.y * sin(orientation->roll) + \
                                                                      accel_event->acceleration.z * cos(orientation->roll)));
@@ -347,9 +341,7 @@ bool Adafruit_10DOF::fusionGetOrientation(sensors_event_t *accel_event, sensors_
 
 
   /* Convert angular data to degree */
-  orientation->roll = orientation->roll * 180 / PI_F;
-  orientation->pitch = orientation->pitch * 180 / PI_F;
-  orientation->heading = orientation->heading * 180 / PI_F;
-
-  return true;
+  orientation->roll = orientation->roll * 180 / PI;
+  orientation->pitch = orientation->pitch * 180 / PI;
+  orientation->heading = orientation->heading * 180 / PI;
 }
