@@ -67,8 +67,6 @@ void setup () {
     fatalError();
     while(true);
   }
-  // Enable auto-ranging
-  gyro.enableAutoRange(true);
   
   ESC1.attach(5);
   ESC2.attach(6);
