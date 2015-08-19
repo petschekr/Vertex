@@ -176,18 +176,22 @@ void updateAttitude() {
   gyroData.z *= (180 / PI);
 
   // angle = 0.98 * (angle + gyroData * dt) + 0.02 * (accData)
-  attitude.pitch = 0.98 * (attitude.pitch + gyroData.x * elapsedSeconds) + 0.02 * orientation.pitch;
-  attitude.roll = 0.98 * (attitude.roll + gyroData.y * elapsedSeconds) + 0.02 * orientation.roll;
+  attitude.pitch = complementaryFilter(attitude.pitch, gyroData.x, elapsedSeconds, orientation.pitch);
+  attitude.roll = complementaryFilter(attitude.roll, gyroData.y, elapsedSeconds, orientation.roll);
   // Immediately correct when compass switches between -180 and 180 degrees
   if (abs(orientation.heading - attitude.yaw) > 100) {
     attitude.yaw = orientation.heading;
   }
   else {
-    attitude.yaw = 0.98 * (attitude.yaw + gyroData.z * elapsedSeconds) + 0.02 * orientation.heading;
+    attitude.yaw = complementaryFilter(attitude.yaw, gyroData.z, elapsedSeconds, orientation.heading);
   }
   lastAttitudeUpdate = millis();
   delay(5);
 }
+double complementaryFilter (double angle, float gyroData, float elapsedSeconds, double accData) {
+  return 0.98 * (angle + gyroData * elapsedSeconds) + 0.02 * accData;
+}
+
 #define BUFFER_SIZE 15
 int pitchBufferIndex;
 float pitchBuffer[BUFFER_SIZE];
