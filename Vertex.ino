@@ -6,6 +6,7 @@
 #include <Adafruit_BMP085_U.h>
 #include <Adafruit_L3GD20_U.h>
 #include <Adafruit_10DOF.h>
+#include "Config.h"
 
 Servo ESC1;
 Servo ESC2;
@@ -23,7 +24,6 @@ Servo ESC4;
 
 const int maxThrottle = 2000;
 const int minThrottle = 1000;
-const int effectiveMaxThrottle = maxThrottle - 200;
 const int armLED = A1;
 const int readyLED = A0;
 const int armButton = 2;
@@ -38,12 +38,20 @@ SensorError sensorError = {0, 0, 0};
 boolean calibrating = true;
 
 struct Attitude {
-  float pitch;
-  float roll;
-  float yaw;
+  double pitch;
+  double roll;
+  double yaw;
 };
 Attitude attitude;
+Attitude desiredAttitude = {0, 0, 0};
 unsigned long lastAttitudeUpdate = 0;
+
+// Set up PID controllers
+double pitchPID, rollPID, yawPID, altitudePID;
+PID pitchPIDController(&attitude.pitch, &pitchPID, &desiredAttitude.pitch, PITCH_KP, PITCH_KI, PITCH_KD, REVERSE);
+//PID rollPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
+//PID yawPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
+//PID altitudePID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 Adafruit_10DOF                dof   = Adafruit_10DOF();
 Adafruit_LSM303_Accel_Unified accel = Adafruit_LSM303_Accel_Unified(30301);
@@ -73,11 +81,6 @@ void setup () {
   pinMode(armButton, INPUT);
   digitalWrite(armLED, LOW);
   digitalWrite(readyLED, HIGH);
-  // Set up PID controllers
-  PID pitchPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
-  PID rollPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
-  PID yawPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
-  PID altitudePID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
   setThrottleAll(minThrottle);
   // Wait until armed
@@ -104,6 +107,9 @@ void setup () {
   // Calibrate accelerometer
   const unsigned short trials = 20;
   sensors_vec_t sensorData;
+  setThrottleAll(1200);
+  // Wait for propellers to get up to speed
+  delay(1000);
   for (int trial = 0; trial < trials; trial++) {
     sensorData = getOrientation();
     sensorError.pitch += (float)sensorData.pitch;
@@ -120,31 +126,50 @@ void setup () {
   attitude.pitch = sensorData.pitch;
   attitude.roll = sensorData.roll;
   attitude.yaw = sensorData.heading;
+  desiredAttitude.yaw = sensorData.heading;
   lastAttitudeUpdate = millis();
+
+  pitchPIDController.SetMode(AUTOMATIC);
+  pitchPIDController.SetOutputLimits(-50, 50);
   
   digitalWrite(armLED, HIGH);
 }
 
 void loop () {
-  setThrottleAll(minThrottle);
+  const int testThrottle = 20;
+  int rawThrottle = map(testThrottle, 0, 100, minThrottle, maxThrottle);
   
   sensors_vec_t orientation = getOrientation();
   updateAttitude();
   //float altitude = getAltitude();
-  Serial.print(F("Yaw: "));
-  Serial.print(attitude.yaw);
-  Serial.print(F(";\tRaw heading: "));
-  Serial.println(orientation.heading);
   
-  // When pitch is positive, decrease motors 1 and 4; increase 2 and 3
-  
-  // When roll is positive, decrease motors 3 and 4; increase 1 and 2
+  pitchPIDController.Compute();
+
+  setThrottle(1, rawThrottle - pitchPID);
+  setThrottle(2, rawThrottle + pitchPID);
+  setThrottle(3, rawThrottle - pitchPID);
+  setThrottle(4, rawThrottle + pitchPID);
+  /*
+  int m0_val = throttle + PIDroll_val + PIDpitch_val + PIDyaw_val; 
+  int m1_val = throttle - PIDroll_val + PIDpitch_val - PIDyaw_val; 
+  int m2_val = throttle + PIDroll_val - PIDpitch_val - PIDyaw_val; 
+  int m3_val = throttle - PIDroll_val - PIDpitch_val + PIDyaw_val; 
+  */
+  Serial.print("Throttle: ");
+  Serial.print(rawThrottle);
+  Serial.print(";\tpitchPID: ");
+  Serial.print(pitchPID);
+  Serial.print(";\tR Pitch: ");
+  Serial.print(orientation.pitch);
+  Serial.print("; \tA Pitch: ");
+  Serial.println(attitude.pitch);
 }
 
 void updateAttitude() {
   unsigned int elapsedTime = millis() - lastAttitudeUpdate;
   float elapsedSeconds = elapsedTime * 0.001;
   sensors_vec_t orientation = getOrientation();
+  
   // X corresponds to pitch, Y corresponds to roll, Z corresponds to yaw
   sensors_vec_t gyroData = getGyro();
   // Convert rad/s to degrees/s to match accelerometer's units
@@ -165,6 +190,10 @@ void updateAttitude() {
   lastAttitudeUpdate = millis();
   delay(5);
 }
+#define BUFFER_SIZE 15
+int pitchBufferIndex;
+float pitchBuffer[BUFFER_SIZE];
+float pitchBufferSum;
 sensors_vec_t getOrientation() {
   sensors_event_t accelEvent;
   sensors_event_t magEvent;
@@ -179,6 +208,14 @@ sensors_vec_t getOrientation() {
   if (!calibrating) {
     orientation.pitch -= sensorError.pitch;
     orientation.roll -= sensorError.roll;
+    
+    pitchBufferSum -= pitchBuffer[pitchBufferIndex];
+    pitchBuffer[pitchBufferIndex] = orientation.pitch;
+    pitchBufferSum += orientation.pitch;
+    pitchBufferIndex++;
+    if (pitchBufferIndex >= BUFFER_SIZE)
+      pitchBufferIndex = 0;
+    orientation.pitch = pitchBufferSum / BUFFER_SIZE;
   }
   orientation.heading = -orientation.heading;
   return orientation;
